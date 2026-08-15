@@ -1,0 +1,6 @@
+# Razer BlackShark V2 Pro 2.4G dongle: 允许普通用户访问 hidraw 读取电量
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1532", ATTRS{idProduct}=="0555", MODE="0666"
+
+# BlackShark V2 Pro 2.4 (1532:0555): 绑定 razerblackshark 驱动(电量/充电/均衡器)
+SUBSYSTEMS=="usb|input|hid", ATTRS{idVendor}=="1532", ATTRS{idProduct}=="0555", ENV{ID_RAZER_CHROMA}="1", ENV{RAZER_DRIVER}="razerblackshark"
+SUBSYSTEM=="hid|usb", ENV{RAZER_DRIVER}=="razerblackshark", RUN+="/usr/lib/udev/razer_mount $env{RAZER_DRIVER} $kernel"

@@ -1,0 +1,3 @@
+# Razer BlackShark V2 Pro 2.4 (1532:0555): 型号名不含 headset 关键字,
+# 手动声明为 headset,让 upower 归类 HEADSET → Solid/KDE 电源组可见
+SUBSYSTEM=="sound", KERNEL=="card*", SUBSYSTEMS=="usb", ATTRS{idVendor}=="1532", ATTRS{idProduct}=="0555", ENV{SOUND_FORM_FACTOR}="headset"
