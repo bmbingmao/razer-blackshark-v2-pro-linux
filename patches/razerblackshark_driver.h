@@ -314,6 +314,12 @@ struct razer_blackshark_device {
     /* Power supply interface (battery reporting) */
     struct power_supply *battery;
     struct power_supply_desc battery_desc;
+
+    /* Last-known-good values, used when the headset is asleep and a live
+     * query times out (the dongle keeps enumerating while the headset is
+     * off, so a timeout must not blank the battery UI). */
+    u8 last_capacity;
+    u8 last_status;               /* 0 = on battery, 1 = charging */
 };
 
 #endif

@@ -37,8 +37,8 @@ EOF
 }
 
 echo "==> 2/5 编译 + 安装内核模块"
-dkms build --force -m openrazer-driver -k "$KERNEL" >/dev/null 2>&1 || dkms build --force "$(dkms status | awk -F'[,/ ]' '/openrazer/{print $2"/"$3; exit}')" -k "$KERNEL"
-VERSION="$(dkms status | awk -F'[,/ ]' '/openrazer/{print $3; exit}')"
+dkms build --force -m openrazer-driver -k "$KERNEL" >/dev/null 2>&1 || dkms build --force "$(dkms status | awk -F'[,/ ]+' '/openrazer/{print $1"/"$2; exit}')" -k "$KERNEL"
+VERSION="$(dkms status | awk -F'[,/ ]+' '/openrazer/{print $2; exit}')"
 dkms install --force -m openrazer-driver -v "$VERSION" -k "$KERNEL"
 
 echo "==> 3/5 写入 udev 规则 + sensors 配置"

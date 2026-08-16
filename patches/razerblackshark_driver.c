@@ -220,21 +220,28 @@ static int razer_blackshark_battery_get_property(struct power_supply *psy,
 
     switch (psp) {
     case POWER_SUPPLY_PROP_PRESENT:
-        ret = blackshark_query(dev, BS_CMD_BATTERY, &v);
-        val->intval = ret == 0;
+        /* The dongle enumerates whether or not the headset is powered on,
+         * so presence follows the USB device, not the last query. */
+        val->intval = 1;
         return 0;
     case POWER_SUPPLY_PROP_CAPACITY:
         ret = blackshark_query(dev, BS_CMD_BATTERY, &v);
-        if (ret)
-            return ret;
-        val->intval = v;
+        if (ret == 0) {
+            if (v > 100)
+                v = 100;
+            WRITE_ONCE(dev->last_capacity, v);
+        }
+        /* Headset asleep: fall back to the last-known-good value instead
+         * of erroring out, so upower/KDE keep showing the battery. */
+        val->intval = READ_ONCE(dev->last_capacity);
         return 0;
     case POWER_SUPPLY_PROP_STATUS:
         ret = blackshark_query(dev, BS_CMD_CHARGING, &v);
-        if (ret)
-            return ret;
-        val->intval = v ? POWER_SUPPLY_STATUS_CHARGING
-                        : POWER_SUPPLY_STATUS_DISCHARGING;
+        if (ret == 0)
+            WRITE_ONCE(dev->last_status, v ? 1 : 0);
+        val->intval = READ_ONCE(dev->last_status)
+                      ? POWER_SUPPLY_STATUS_CHARGING
+                      : POWER_SUPPLY_STATUS_DISCHARGING;
         return 0;
     case POWER_SUPPLY_PROP_SCOPE:
         val->intval = POWER_SUPPLY_SCOPE_DEVICE;
@@ -242,6 +249,22 @@ static int razer_blackshark_battery_get_property(struct power_supply *psy,
     default:
         return -EINVAL;
     }
+}
+
+/* Seed the cache before registering the power supply, so the very first
+ * upower read has a real value rather than the default (if the headset is
+ * asleep the queries time out and the defaults stay). */
+static void razer_blackshark_battery_seed_cache(struct razer_blackshark_device *dev)
+{
+    u8 v;
+
+    if (blackshark_query(dev, BS_CMD_BATTERY, &v) == 0) {
+        if (v > 100)
+            v = 100;
+        dev->last_capacity = v;
+    }
+    if (blackshark_query(dev, BS_CMD_CHARGING, &v) == 0)
+        dev->last_status = v ? 1 : 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -261,10 +284,14 @@ static int razer_blackshark_hwmon_read(struct device *dev,
     u8 v;
     int ret = blackshark_query(rdev, BS_CMD_BATTERY, &v);
 
-    if (ret)
-        return ret;
-    /* power1_input 单位是 µW;用 百分比×1000 表达,66% -> 66000µW */
-    *val = (long)v * 1000;
+    if (ret == 0) {
+        if (v > 100)
+            v = 100;
+        WRITE_ONCE(rdev->last_capacity, v);
+    }
+    /* power1_input 单位是 µW;用 百分比×1000 表达,66% -> 66000µW.
+     * 耳机休眠时查询超时,回退到缓存值(与 power_supply 一致). */
+    *val = (long)READ_ONCE(rdev->last_capacity) * 1000;
     return 0;
 }
 
@@ -1104,6 +1131,7 @@ static int razer_blackshark_probe(struct hid_device *hdev, const struct hid_devi
             .drv_data = dev,
         };
 
+        razer_blackshark_battery_seed_cache(dev);
         dev->battery_desc.name = "razer_blackshark_battery";
         dev->battery_desc.type = POWER_SUPPLY_TYPE_BATTERY;
         dev->battery_desc.properties = razer_blackshark_battery_props;
