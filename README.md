@@ -27,24 +27,30 @@ the missing pieces for a complete experience:
    [#2868](https://github.com/openrazer/openrazer/pull/2868): cache-only reads (never
    blocks the HID path), async worker refresh, and last-known-good values when the
    headset's radio link is asleep
-2. **`SOUND_FORM_FACTOR=headset` udev rule** ⭐ — battery appears in the KDE tray / Power & Battery settings / Info Center
+2. **`SOUND_FORM_FACTOR=headset` hwdb entry** ⭐ — battery appears in the KDE tray / Power & Battery settings / Info Center
 
 *(An earlier version also registered a hwmon chip; it was dropped after upstream review —
 the power_supply core already auto-registers an empty hwmon node, and reporting a
 percentage as µW only misleads `sensors`.)*
 
-### About point 3 (the unique finding in this repo)
+### About point 2 (the unique finding in this repo)
 
 The model string "BlackShark V2 Pro" contains no headset/headphone keyword, so systemd's
 `78-sound-card.rules` never sets `SOUND_FORM_FACTOR`; upower then classifies the dongle as
 `UP_DEVICE_KIND_OTHER_AUDIO` (21), and Solid's `queryDeviceInterface(Battery)` whitelist
 refuses to expose a Battery interface — **so no KDE UI ever shows the battery**.
 
-One udev rule fixes it (**works for any USB headset battery**):
+An hwdb entry fixes it (**works for any USB headset battery**; this is the form systemd
+itself uses in `70-sound-card.hwdb`, so it can be upstreamed as a pure data patch):
 
-```udev
-SUBSYSTEM=="sound", KERNEL=="card*", SUBSYSTEMS=="usb", ATTRS{idVendor}=="1532", ATTRS{idProduct}=="0555", ENV{SOUND_FORM_FACTOR}="headset"
 ```
+# /etc/udev/hwdb.d/71-sound-card-local.hwdb  (leading space required)
+usb:v1532p0555*
+ SOUND_FORM_FACTOR=headset
+```
+
+The property must land on the sound `card*` sibling — the same node upower's
+`up-device-supply.c` reads `SOUND_FORM_FACTOR` from.
 
 ## Installation
 
@@ -87,7 +93,7 @@ python3 scripts/razer-battery.py        # requires udev/99-razer-blackshark.rule
 
 ```
 patches/                  # patched driver source (based on openrazer PR #2862, + power_supply via the #2868 helper)
-udev/                     # hidraw permission rule + SOUND_FORM_FACTOR rule
+udev/                     # hidraw permission rule + SOUND_FORM_FACTOR hwdb entry
 scripts/install.sh        # one-shot installer (idempotent, safe to re-run)
 scripts/razer-battery.py  # hidraw battery reader (no kernel driver needed)
 ```

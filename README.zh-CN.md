@@ -25,23 +25,29 @@ openrazer 官方驱动**不支持任何耳机**。社区的 PR
    作为 openrazer [#2868](https://github.com/openrazer/openrazer/pull/2868) 的
    **共享 `razer_power_supply` helper** 的扩展:纯缓存读取(绝不阻塞 HID 路径)、
    异步 worker 刷新、耳机射频链路休眠时返回 last-known-good 缓存值
-2. **`SOUND_FORM_FACTOR=headset` udev 规则** ⭐ — 让 KDE 托盘/电源面板/信息中心显示它
+2. **`SOUND_FORM_FACTOR=headset` hwdb 条目** ⭐ — 让 KDE 托盘/电源面板/信息中心显示它
 
 *(早期版本还注册了 hwmon chip,上游评审后已移除 —— power_supply 内核核心本就会自动
 注册一个空的 hwmon 节点,而把百分比伪装成 µW 只会误导 `sensors`。)*
 
-### 关于第 3 点(本仓库的独特发现)
+### 关于第 2 点(本仓库的独特发现)
 
 型号名 "BlackShark V2 Pro" 不含 headset/headphone 关键字 → systemd 的
 `78-sound-card.rules` 不会设置 `SOUND_FORM_FACTOR` → upower 把设备归类为
 `UP_DEVICE_KIND_OTHER_AUDIO`(21)→ Solid 的 `queryDeviceInterface(Battery)`
 白名单拒绝暴露 Battery 接口 → **KDE 所有界面都看不到电量**。
 
-一条 udev 规则即可修复(**对任何 USB 耳机电池通用**):
+一条 hwdb 条目即可修复(**对任何 USB 耳机电池通用**;这是 systemd 自己在
+`70-sound-card.hwdb` 里用的形式,可以纯数据补丁方式上游到 systemd):
 
-```udev
-SUBSYSTEM=="sound", KERNEL=="card*", SUBSYSTEMS=="usb", ATTRS{idVendor}=="1532", ATTRS{idProduct}=="0555", ENV{SOUND_FORM_FACTOR}="headset"
 ```
+# /etc/udev/hwdb.d/71-sound-card-local.hwdb(属性行前导空格必须有)
+usb:v1532p0555*
+ SOUND_FORM_FACTOR=headset
+```
+
+属性必须落在 sound `card*` 兄弟节点 —— 也就是 upower `up-device-supply.c`
+读取 `SOUND_FORM_FACTOR` 的那个节点。
 
 ## 安装
 
@@ -82,7 +88,7 @@ python3 scripts/razer-battery.py        # 需要 udev/99-razer-blackshark.rules(
 
 ```
 patches/                  # 补丁后的驱动源码(基于 openrazer PR #2862,power_supply 走 #2868 helper)
-udev/                     # hidraw 权限规则 + SOUND_FORM_FACTOR 规则
+udev/                     # hidraw 权限规则 + SOUND_FORM_FACTOR hwdb 条目
 scripts/install.sh        # 一键安装(幂等,可重复执行)
 scripts/razer-battery.py  # hidraw 直读电量脚本(免内核驱动)
 ```

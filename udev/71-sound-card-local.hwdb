@@ -1,0 +1,4 @@
+# Razer BlackShark V2 Pro 2.4 (1532:0555): 型号名无 headset 关键字,
+# 手动声明 SOUND_FORM_FACTOR=headset → upower 归类 HEADSET → KDE Solid 可见
+usb:v1532p0555*
+ SOUND_FORM_FACTOR=headset

@@ -48,11 +48,14 @@ dkms build --force -m openrazer-driver -k "$KERNEL" >/dev/null 2>&1 || \
 VERSION="$(dkms status | awk -F'[,/ ]+' '/openrazer/{print $2; exit}')"
 dkms install --force -m openrazer-driver -v "$VERSION" -k "$KERNEL"
 
-echo "==> 3/5 写入 udev 规则"
+echo "==> 3/5 写入 udev 规则 + hwdb"
 install -m 644 "$SRC_DIR/udev/99-razer-blackshark.rules" /etc/udev/rules.d/
-install -m 644 "$SRC_DIR/udev/90-razer-blackshark-sound.rules" /etc/udev/rules.d/
+install -Dm 644 "$SRC_DIR/udev/71-sound-card-local.hwdb" /etc/udev/hwdb.d/71-sound-card-local.hwdb
 echo 'razerblackshark' > /etc/modules-load.d/razerblackshark.conf
 udevadm control --reload
+# SOUND_FORM_FACTOR 走 hwdb(systemd 原生形式):先触发 usb 导入 ID,再触发 sound card
+systemd-hwdb update 2>/dev/null || true
+udevadm trigger --action=change --subsystem-match=usb --attr-match=idVendor=1532
 udevadm trigger --action=change --subsystem-match=sound
 
 echo "==> 4/5 加载模块 + 绑定设备"
