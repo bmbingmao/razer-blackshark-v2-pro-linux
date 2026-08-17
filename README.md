@@ -8,7 +8,7 @@ Power & Battery settings, Info Center, System Monitor sensor list).
 
 | Feature | Status |
 |---|---|
-| Battery level / charging state | ✅ kernel power_supply + upower |
+| Battery level / charging state | ✅ kernel power_supply (shared helper, PR #2868) + upower |
 | KDE tray / Power & Battery settings / Info Center | ✅ real-time battery icon |
 | System Monitor sensor list (Power group) | ✅ `power/<serial>/chargePercentage` |
 | Equalizer / sidetone / auto power-off / DND (from the driver) | ✅ via PR #2862 |
@@ -22,8 +22,11 @@ The official openrazer driver does **not support any headsets**. Community PR
 but it is **not merged yet**. This repo turns it into a one-shot install and adds
 the missing pieces for a complete experience:
 
-1. **`power_supply` registration** — battery appears in `/sys/class/power_supply/` and upower,
-   with a last-known-good cache so a sleeping headset never blanks the UI
+1. **`power_supply` registration** — battery appears in `/sys/class/power_supply/` and upower.
+   Built as an extension of the **shared `razer_power_supply` helper** from openrazer
+   [#2868](https://github.com/openrazer/openrazer/pull/2868): cache-only reads (never
+   blocks the HID path), async worker refresh, and last-known-good values when the
+   headset's radio link is asleep
 2. **`SOUND_FORM_FACTOR=headset` udev rule** ⭐ — battery appears in the KDE tray / Power & Battery settings / Info Center
 
 *(An earlier version also registered a hwmon chip; it was dropped after upstream review —
@@ -63,7 +66,7 @@ Requirements: `openrazer-driver-dkms`, `dkms` (kernel headers are pulled automat
 ## Verify
 
 ```bash
-cat /sys/class/power_supply/razer_blackshark_battery/capacity   # 82
+cat /sys/class/power_supply/razer_battery_*/capacity   # 79
 cat /sys/class/power_supply/razer_blackshark_battery/status     # Charging
 upower -d | grep -A8 razer
 # KDE: tray battery icon / Settings > Power & Battery / Info Center → Razer BlackShark V2 Pro 2.4
@@ -83,7 +86,7 @@ python3 scripts/razer-battery.py        # requires udev/99-razer-blackshark.rule
 ## Repository layout
 
 ```
-patches/                  # patched driver source (based on openrazer PR #2862, + power_supply)
+patches/                  # patched driver source (based on openrazer PR #2862, + power_supply via the #2868 helper)
 udev/                     # hidraw permission rule + SOUND_FORM_FACTOR rule
 scripts/install.sh        # one-shot installer (idempotent, safe to re-run)
 scripts/razer-battery.py  # hidraw battery reader (no kernel driver needed)

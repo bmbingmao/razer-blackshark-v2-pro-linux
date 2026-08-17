@@ -199,70 +199,28 @@ static int blackshark_query(struct razer_blackshark_device *dev, u8 cmd_id, u8 *
 }
 
 /* ------------------------------------------------------------------ */
-/* Power supply (battery) interface                                    */
+/* Power supply (battery) interface — shared razer_power_supply helper */
+/* (openrazer PR #2868): get_property reads a cache only, never blocks;*/
+/* this refresh callback runs on the helper's worker (every 60 s) and  */
+/* is the only writer of the cache.                                    */
 /* ------------------------------------------------------------------ */
 
-static enum power_supply_property razer_blackshark_battery_props[] = {
-    POWER_SUPPLY_PROP_PRESENT,
-    POWER_SUPPLY_PROP_STATUS,
-    POWER_SUPPLY_PROP_CAPACITY,
-    POWER_SUPPLY_PROP_SCOPE,
-};
-
-static int razer_blackshark_battery_get_property(struct power_supply *psy,
-        enum power_supply_property psp, union power_supply_propval *val)
+static void razer_blackshark_battery_refresh(struct razer_power_supply *rps)
 {
-    struct razer_blackshark_device *dev = power_supply_get_drvdata(psy);
-    u8 v;
-    int ret;
+    struct razer_blackshark_device *dev = rps->drv_data;
+    u8 cap = 0, chg = 0;
 
-    switch (psp) {
-    case POWER_SUPPLY_PROP_PRESENT:
-        /* The dongle enumerates whether or not the headset is powered on,
-         * so presence follows the USB device, not the last query. */
-        val->intval = 1;
-        return 0;
-    case POWER_SUPPLY_PROP_CAPACITY:
-        ret = blackshark_query(dev, BS_CMD_BATTERY, &v);
-        if (ret == 0) {
-            if (v > 100)
-                v = 100;
-            WRITE_ONCE(dev->last_capacity, v);
-        }
-        /* Headset asleep: fall back to the last-known-good value instead
-         * of erroring out, so upower/KDE keep showing the battery. */
-        val->intval = READ_ONCE(dev->last_capacity);
-        return 0;
-    case POWER_SUPPLY_PROP_STATUS:
-        ret = blackshark_query(dev, BS_CMD_CHARGING, &v);
-        if (ret == 0)
-            WRITE_ONCE(dev->last_status, v ? 1 : 0);
-        val->intval = READ_ONCE(dev->last_status)
-                      ? POWER_SUPPLY_STATUS_CHARGING
-                      : POWER_SUPPLY_STATUS_DISCHARGING;
-        return 0;
-    case POWER_SUPPLY_PROP_SCOPE:
-        val->intval = POWER_SUPPLY_SCOPE_DEVICE;
-        return 0;
-    default:
-        return -EINVAL;
-    }
-}
-
-/* Seed the cache before registering the power supply, so the very first
- * upower read has a real value rather than the default (if the headset is
- * asleep the queries time out and the defaults stay). */
-static void razer_blackshark_battery_seed_cache(struct razer_blackshark_device *dev)
-{
-    u8 v;
-
-    if (blackshark_query(dev, BS_CMD_BATTERY, &v) == 0) {
-        if (v > 100)
-            v = 100;
-        dev->last_capacity = v;
-    }
-    if (blackshark_query(dev, BS_CMD_CHARGING, &v) == 0)
-        dev->last_status = v ? 1 : 0;
+    /* Headset asleep (dongle radio link sleeping): queries time out —
+     * keep the last-known-good values, never blank the UI. */
+    if (blackshark_query(dev, BS_CMD_BATTERY, &cap))
+        return;
+    if (cap > 100)
+        cap = 100;
+    if (blackshark_query(dev, BS_CMD_CHARGING, &chg))
+        return;
+    razer_power_supply_set(rps, cap, chg ? POWER_SUPPLY_STATUS_CHARGING
+                                         : POWER_SUPPLY_STATUS_DISCHARGING,
+                           true);
 }
 /**
  * raw_event: replies (and unsolicited telemetry) arrive here. When a request is
@@ -1081,25 +1039,11 @@ static int razer_blackshark_probe(struct hid_device *hdev, const struct hid_devi
      * non-fatal: the sysfs attributes above remain usable.
      */
     if (dev->usb_pid == USB_DEVICE_ID_RAZER_BLACKSHARK_V2_PRO_2_4) {
-        struct power_supply_config psy_cfg = {
-            .drv_data = dev,
-        };
-
-        razer_blackshark_battery_seed_cache(dev);
-        dev->battery_desc.name = "razer_blackshark_battery";
-        dev->battery_desc.type = POWER_SUPPLY_TYPE_BATTERY;
-        dev->battery_desc.properties = razer_blackshark_battery_props;
-        dev->battery_desc.num_properties =
-            ARRAY_SIZE(razer_blackshark_battery_props);
-        dev->battery_desc.get_property =
-            razer_blackshark_battery_get_property;
-        dev->battery = power_supply_register(&hdev->dev, &dev->battery_desc,
-                                             &psy_cfg);
-        if (IS_ERR(dev->battery)) {
-            hid_warn(hdev, "blackshark: power supply register failed: %ld\n",
-                     PTR_ERR(dev->battery));
-            dev->battery = NULL;
-        }
+        if (razer_power_supply_register(&dev->rps, &hdev->dev, dev,
+                                        "Razer BlackShark V2 Pro 2.4",
+                                        razer_blackshark_battery_refresh,
+                                        60000))
+            hid_warn(hdev, "blackshark: power supply register failed\n");
     }
 
     schedule_delayed_work(&dev->ids_work, 0);
@@ -1150,8 +1094,7 @@ static void razer_blackshark_disconnect(struct hid_device *hdev)
         }
     }
 
-    if (dev->battery)
-        power_supply_unregister(dev->battery);
+    razer_power_supply_unregister(&dev->rps);
 
     hid_hw_close(hdev);
     hid_hw_stop(hdev);

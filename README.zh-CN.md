@@ -8,7 +8,7 @@
 
 | 功能 | 状态 |
 |---|---|
-| 电量 / 充电状态 | ✅ 内核 power_supply + upower |
+| 电量 / 充电状态 | ✅ 内核 power_supply(共享 helper,PR #2868)+ upower |
 | KDE 托盘 / 电源与电池设置 / 信息中心 | ✅ 电池图标实时显示 |
 | System Monitor 传感器列表(电源分组) | ✅ `power/<serial>/chargePercentage` |
 | 均衡器 / 侧音 / 自动关机 / DND(驱动自带) | ✅ 来自 PR #2862 |
@@ -21,8 +21,10 @@ openrazer 官方驱动**不支持任何耳机**。社区的 PR
 (64 字节 MXIC 厂商协议,由作者从 Synapse USB 抓包逆向),但**尚未合并**。
 本仓库把它做成一键安装,并补上 PR 缺失的拼图:
 
-1. **`power_supply` 注册** — 让电池出现在 `/sys/class/power_supply/` 和 upower,
-   带 last-known-good 缓存:耳机休眠时 UI 不会空白
+1. **`power_supply` 注册** — 让电池出现在 `/sys/class/power_supply/` 和 upower。
+   作为 openrazer [#2868](https://github.com/openrazer/openrazer/pull/2868) 的
+   **共享 `razer_power_supply` helper** 的扩展:纯缓存读取(绝不阻塞 HID 路径)、
+   异步 worker 刷新、耳机射频链路休眠时返回 last-known-good 缓存值
 2. **`SOUND_FORM_FACTOR=headset` udev 规则** ⭐ — 让 KDE 托盘/电源面板/信息中心显示它
 
 *(早期版本还注册了 hwmon chip,上游评审后已移除 —— power_supply 内核核心本就会自动
@@ -59,7 +61,7 @@ sudo ./scripts/install.sh
 ## 验证
 
 ```bash
-cat /sys/class/power_supply/razer_blackshark_battery/capacity   # 82
+cat /sys/class/power_supply/razer_battery_*/capacity   # 79
 cat /sys/class/power_supply/razer_blackshark_battery/status     # Charging
 upower -d | grep -A8 razer
 # KDE: 托盘电池图标 / 系统设置-电源与电池 / 信息中心 → Razer BlackShark V2 Pro 2.4
@@ -79,7 +81,7 @@ python3 scripts/razer-battery.py        # 需要 udev/99-razer-blackshark.rules(
 ## 目录结构
 
 ```
-patches/                  # 补丁后的驱动源码(基于 openrazer PR #2862,含 power_supply)
+patches/                  # 补丁后的驱动源码(基于 openrazer PR #2862,power_supply 走 #2868 helper)
 udev/                     # hidraw 权限规则 + SOUND_FORM_FACTOR 规则
 scripts/install.sh        # 一键安装(幂等,可重复执行)
 scripts/razer-battery.py  # hidraw 直读电量脚本(免内核驱动)

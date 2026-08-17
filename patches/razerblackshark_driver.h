@@ -9,6 +9,7 @@
 #include <linux/mutex.h>
 #include <linux/completion.h>
 #include <linux/workqueue.h>
+#include "razercommon.h"
 
 #define USB_DEVICE_ID_RAZER_BLACKSHARK_V2_PRO_2_4 0x0555
 
@@ -311,15 +312,10 @@ struct razer_blackshark_device {
     u8 sidetone;                  /* sidetone level, 0 = off */
     u8 dnd;                       /* do-not-disturb: 0/1 */
 
-    /* Power supply interface (battery reporting) */
-    struct power_supply *battery;
-    struct power_supply_desc battery_desc;
-
-    /* Last-known-good values, used when the headset is asleep and a live
-     * query times out (the dongle keeps enumerating while the headset is
-     * off, so a timeout must not blank the battery UI). */
-    u8 last_capacity;
-    u8 last_status;               /* 0 = on battery, 1 = charging */
+    /* Power supply interface (battery reporting) — shared
+     * razer_power_supply helper (openrazer PR #2868): cache-only reads,
+     * async worker refresh, last-known-good on headset sleep. */
+    struct razer_power_supply rps;
 };
 
 #endif

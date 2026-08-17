@@ -17,6 +17,9 @@ echo "==> 1/5 应用驱动补丁到 $DRIVER_SRC"
 [ -n "$DRIVER_SRC" ] || { echo "❌ 未找到 openrazer-driver 源码,请先安装 openrazer-driver-dkms"; exit 1; }
 cp "$SRC_DIR/patches/razerblackshark_driver.c" "$DRIVER_SRC/driver/"
 cp "$SRC_DIR/patches/razerblackshark_driver.h" "$DRIVER_SRC/driver/"
+# razercommon.{c,h}: power_supply helper(PR #2868)扩展,耳机接入 shared helper
+cp "$SRC_DIR/patches/razercommon.c" "$DRIVER_SRC/driver/razercommon.c"
+cp "$SRC_DIR/patches/razercommon.h" "$DRIVER_SRC/driver/razercommon.h"
 
 # Makefile: obj-m 注册
 grep -q 'razerblackshark' "$DRIVER_SRC/driver/Makefile" || {
@@ -37,7 +40,11 @@ EOF
 }
 
 echo "==> 2/5 编译 + 安装内核模块"
-dkms build --force -m openrazer-driver -k "$KERNEL" >/dev/null 2>&1 || dkms build --force "$(dkms status | awk -F'[,/ ]+' '/openrazer/{print $1"/"$2; exit}')" -k "$KERNEL"
+# 内核若用 clang 构建(gcc 会不认识 clang 专属参数),失败时回退 LLVM 编译
+dkms build --force -m openrazer-driver -k "$KERNEL" >/dev/null 2>&1 || \
+  dkms build --force "$(dkms status | awk -F'[,/ ]+' '/openrazer/{print $1"/"$2; exit}')" -k "$KERNEL" >/dev/null 2>&1 || \
+  { CC=clang LLVM=1 dkms build --force -m openrazer-driver -k "$KERNEL" || \
+    CC=clang LLVM=1 dkms build --force "$(dkms status | awk -F'[,/ ]+' '/openrazer/{print $1"/"$2; exit}')" -k "$KERNEL"; }
 VERSION="$(dkms status | awk -F'[,/ ]+' '/openrazer/{print $2; exit}')"
 dkms install --force -m openrazer-driver -v "$VERSION" -k "$KERNEL"
 
@@ -59,8 +66,10 @@ fi
 
 echo "==> 5/5 验证"
 sleep 1
-if [ -f /sys/class/power_supply/razer_blackshark_battery/capacity ]; then
-  echo "✅ 电量: $(cat /sys/class/power_supply/razer_blackshark_battery/capacity)%  $(cat /sys/class/power_supply/razer_blackshark_battery/status)"
+PS_NAME="$(ls /sys/class/power_supply/ 2>/dev/null | grep '^razer_battery_' | head -1 || true)"
+if [ -n "$PS_NAME" ]; then
+  echo "✅ 电量: $(cat /sys/class/power_supply/$PS_NAME/capacity)%  $(cat /sys/class/power_supply/$PS_NAME/status)"
+  echo "   (power_supply 设备: $PS_NAME,耳机休眠时查询超时、显示缓存值为正常)"
 else
   echo "⚠️ 电源设备未出现 —— 确认接收器已插入;若耳机未开机则查询会超时,属正常"
 fi
