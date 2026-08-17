@@ -190,6 +190,8 @@ struct razer_power_supply {
     int                      capacity;  /* 0..100, -1 = unknown */
     int                      status;    /* POWER_SUPPLY_STATUS_* */
     bool                     present;
+    unsigned int             fail_count;   /* consecutive quiet-query misses */
+    unsigned int             absent_after; /* misses before present=0 */
 
     void                   (*refresh_cb)(struct razer_power_supply *rps);
     void                    *drv_data;  /* driver device ptr for refresh_cb */
@@ -200,8 +202,9 @@ struct razer_power_supply {
 int  razer_power_supply_register(struct razer_power_supply *rps, struct device *parent,
                                  void *drv_data, const char *model,
                                  void (*refresh_cb)(struct razer_power_supply *),
-                                 unsigned int refresh_ms);
+                                 unsigned int refresh_ms, unsigned int absent_after);
 void razer_power_supply_unregister(struct razer_power_supply *rps);
 void razer_power_supply_set(struct razer_power_supply *rps,
                             int capacity, int status, bool present);
+void razer_power_supply_query_failed(struct razer_power_supply *rps);
 #endif /* DRIVER_RAZERCOMMON_H_ */

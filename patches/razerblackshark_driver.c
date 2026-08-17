@@ -209,17 +209,32 @@ static void razer_blackshark_battery_refresh(struct razer_power_supply *rps)
 {
     struct razer_blackshark_device *dev = rps->drv_data;
     u8 cap = 0, chg = 0;
+    int ret;
 
-    /* Headset asleep (dongle radio link sleeping): queries time out —
-     * keep the last-known-good values, never blank the UI. */
-    if (blackshark_query(dev, BS_CMD_BATTERY, &cap))
+    /* Headset asleep (dongle radio link sleeping): the first query after a
+     * pause reliably times out (~1.1 s) even on a healthy link. Retry once
+     * before counting a miss; the helper holds the cached reading until
+     * absent_after consecutive misses. For this headset the dongle keeps
+     * enumerating while the headset is off, so absent_after is UINT_MAX
+     * (never hide) and a timeout just keeps the last-known-good values. */
+    ret = blackshark_query(dev, BS_CMD_BATTERY, &cap);
+    if (ret)
+        ret = blackshark_query(dev, BS_CMD_BATTERY, &cap);
+    if (ret) {
+        razer_power_supply_query_failed(rps);
         return;
+    }
     if (cap > 100)
         cap = 100;
-    if (blackshark_query(dev, BS_CMD_CHARGING, &chg))
-        return;
-    razer_power_supply_set(rps, cap, chg ? POWER_SUPPLY_STATUS_CHARGING
-                                         : POWER_SUPPLY_STATUS_DISCHARGING,
+
+    /* Charging read is best-effort: a percentage alone is still useful. */
+    ret = blackshark_query(dev, BS_CMD_CHARGING, &chg);
+    if (ret)
+        ret = blackshark_query(dev, BS_CMD_CHARGING, &chg);
+    razer_power_supply_set(rps, cap,
+                           ret ? POWER_SUPPLY_STATUS_UNKNOWN
+                               : (chg ? POWER_SUPPLY_STATUS_CHARGING
+                                      : POWER_SUPPLY_STATUS_DISCHARGING),
                            true);
 }
 /**
@@ -1042,7 +1057,7 @@ static int razer_blackshark_probe(struct hid_device *hdev, const struct hid_devi
         if (razer_power_supply_register(&dev->rps, &hdev->dev, dev,
                                         "Razer BlackShark V2 Pro 2.4",
                                         razer_blackshark_battery_refresh,
-                                        60000))
+                                        60000, UINT_MAX))
             hid_warn(hdev, "blackshark: power supply register failed\n");
     }
 
