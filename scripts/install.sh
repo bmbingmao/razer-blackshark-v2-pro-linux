@@ -41,10 +41,9 @@ dkms build --force -m openrazer-driver -k "$KERNEL" >/dev/null 2>&1 || dkms buil
 VERSION="$(dkms status | awk -F'[,/ ]+' '/openrazer/{print $2; exit}')"
 dkms install --force -m openrazer-driver -v "$VERSION" -k "$KERNEL"
 
-echo "==> 3/5 写入 udev 规则 + sensors 配置"
+echo "==> 3/5 写入 udev 规则"
 install -m 644 "$SRC_DIR/udev/99-razer-blackshark.rules" /etc/udev/rules.d/
 install -m 644 "$SRC_DIR/udev/90-razer-blackshark-sound.rules" /etc/udev/rules.d/
-install -Dm 644 "$SRC_DIR/sensors.d/razer-blackshark.conf" /etc/sensors.d/razer-blackshark.conf
 echo 'razerblackshark' > /etc/modules-load.d/razerblackshark.conf
 udevadm control --reload
 udevadm trigger --action=change --subsystem-match=sound

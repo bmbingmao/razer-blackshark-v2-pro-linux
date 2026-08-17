@@ -35,8 +35,6 @@
 #include <linux/hid.h>
 #include <linux/delay.h>
 #include <linux/power_supply.h>
-#include <linux/hwmon.h>
-#include <linux/hwmon-sysfs.h>
 
 #include "razerblackshark_driver.h"
 #include "razercommon.h"
@@ -266,50 +264,6 @@ static void razer_blackshark_battery_seed_cache(struct razer_blackshark_device *
     if (blackshark_query(dev, BS_CMD_CHARGING, &v) == 0)
         dev->last_status = v ? 1 : 0;
 }
-
-/* ------------------------------------------------------------------ */
-/* hwmon interface (battery level in the lm_sensors / KDE sensor list) */
-/* ------------------------------------------------------------------ */
-
-static umode_t razer_blackshark_hwmon_is_visible(const void *drvdata,
-        enum hwmon_sensor_types type, u32 attr, int channel)
-{
-    return 0444;
-}
-
-static int razer_blackshark_hwmon_read(struct device *dev,
-        enum hwmon_sensor_types type, u32 attr, int channel, long *val)
-{
-    struct razer_blackshark_device *rdev = dev_get_drvdata(dev);
-    u8 v;
-    int ret = blackshark_query(rdev, BS_CMD_BATTERY, &v);
-
-    if (ret == 0) {
-        if (v > 100)
-            v = 100;
-        WRITE_ONCE(rdev->last_capacity, v);
-    }
-    /* power1_input 单位是 µW;用 百分比×1000 表达,66% -> 66000µW.
-     * 耳机休眠时查询超时,回退到缓存值(与 power_supply 一致). */
-    *val = (long)READ_ONCE(rdev->last_capacity) * 1000;
-    return 0;
-}
-
-static const struct hwmon_channel_info * const razer_blackshark_hwmon_info[] = {
-    HWMON_CHANNEL_INFO(power, HWMON_P_INPUT),
-    NULL
-};
-
-static const struct hwmon_ops razer_blackshark_hwmon_ops = {
-    .is_visible = razer_blackshark_hwmon_is_visible,
-    .read = razer_blackshark_hwmon_read,
-};
-
-static const struct hwmon_chip_info razer_blackshark_hwmon_chip = {
-    .ops = &razer_blackshark_hwmon_ops,
-    .info = razer_blackshark_hwmon_info,
-};
-
 /**
  * raw_event: replies (and unsolicited telemetry) arrive here. When a request is
  * pending, match the echoed cmd id at the model's reply offset and capture the
@@ -1147,12 +1101,6 @@ static int razer_blackshark_probe(struct hid_device *hdev, const struct hid_devi
             dev->battery = NULL;
         }
     }
-
-    /* hwmon 传感器: lm_sensors / KDE 系统监视器可见(devm,随设备自动注销) */
-    if (IS_ERR(devm_hwmon_device_register_with_info(&hdev->dev, "razerblackshark",
-                                                    dev, &razer_blackshark_hwmon_chip,
-                                                    NULL)))
-        hid_warn(hdev, "blackshark: hwmon register failed\n");
 
     schedule_delayed_work(&dev->ids_work, 0);
 
